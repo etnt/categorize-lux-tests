@@ -2,10 +2,10 @@
 
 This project contains two Python scripts that work together to summarize and analyze Lux test files:
 
-1. `summarize_lux_tests.py`: Extracts information from Lux test files and creates a summary.
-2. `cluster_tests.py`: Clusters the summarized tests based on content similarity.
+1. `categorize-lux-tests.py`: Extracts information from Lux test files and creates a summary.
+2. `group-tests.py`: Clusters the summarized tests based on content similarity.
 
-## summarize_lux_tests.py
+## categorize-lux-tests.py
 
 This script processes Lux test files (.lux) and generates a summary of their contents.
 
@@ -15,11 +15,23 @@ This script processes Lux test files (.lux) and generates a summary of their con
 - Extracts comments, [doc] descriptions, [invoke log] entries, and [progress] information
 - Generates a summary file (lux_tests_summary.txt) with organized test information
 
-### Usage:
+## group-tests.py
+
+This script organizes Lux tests into groups based on their common attributes found in the test files.
+
+### Features:
+
+- Identifies common attributes or tags within test files
+- Groups tests based on shared characteristics
+- Generates a report of test groups with their common attributes
+
+
+## Usage:
 
 ```bash
     make venv
     ./venv/bin/python categorize-lux-tests.py
-    ./venv/bin/python group-tests.py
+    ./venv/bin/python group-tests.py [--num-clusters NUM_CLUSTERS]
 ```
+
 
