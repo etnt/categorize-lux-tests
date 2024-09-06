@@ -28,6 +28,10 @@ def should_exclude(word):
             is_number(word) or 
             re.match(r'^eng-\d+', word))
 
+def clean_name_words(name_words):
+    # Remove 'tr', 'eng', 'ENG', and pure numbers
+    return [word for word in name_words if word.lower() not in ['tr', 'eng', 'rt'] and not word.isdigit()]
+
 def read_test_data(file_path):
     """
     Read and parse the test data from the given file, excluding summary tags.
@@ -36,7 +40,7 @@ def read_test_data(file_path):
         file_path (str): Path to the file containing test data.
 
     Returns:
-        dict: A dictionary where keys are test names and values are test contents.
+        dict: A dictionary where keys are test names and values are lists of words.
     """
     with open(file_path, 'r') as f:
         content = f.read()
@@ -49,8 +53,14 @@ def read_test_data(file_path):
         lines = test.strip().split('\n')
         test_name = lines[0].strip()
         
-        # Initialize an empty list to store relevant content
-        relevant_content = []
+        # Split the test name into words
+        name_words = re.split(r'[-_]', test_name)
+        
+        # Clean the name_words
+        name_words = clean_name_words(name_words)
+        
+        # Initialize the list of words with the split test name
+        relevant_content = name_words
         
         # Flag to track whether we're in a section to include
         include_section = True
@@ -68,10 +78,12 @@ def read_test_data(file_path):
             
             # If we're in a section to include, add the line to relevant content
             if include_section:
-                relevant_content.append(line)
+                # Split the line into words using '-' and '_' as delimiters
+                words = re.split(r'[-_]', line)
+                relevant_content.extend(words)
         
-        # Join the relevant content and store it in the dictionary
-        test_data[test_name] = ' '.join(relevant_content)
+        # Store the list of words in the dictionary
+        test_data[test_name] = relevant_content
 
     return test_data
 
@@ -91,7 +103,19 @@ def cluster_tests(test_data, num_clusters):
             - np.ndarray: The TF-IDF transformed data.
     """
     test_names = list(test_data.keys())
-    test_contents = list(test_data.values())
+    test_contents = [' '.join(content) for content in test_data.values()]
+
+    print(f"Total number of tests: {len(test_contents)}")
+    print("Sample test names and contents:")
+    for i in range(min(5, len(test_contents))):
+        print(f"Test name: {test_names[i]}")
+        print(f"Content: {test_contents[i][:100]}")
+        print(f"Content length: {len(test_contents[i])}")
+        print("---")
+
+    if not any(test_contents):
+        print("Warning: All test contents are empty!")
+        return None, None, None, None
 
     # Convert text to TF-IDF features
     vectorizer = TfidfVectorizer(stop_words='english')
@@ -113,19 +137,20 @@ def get_cluster_summary(cluster_contents, vectorizer, top_n=5):
     Generate a summary of the most common bigrams in a cluster.
 
     Args:
-        cluster_contents (list): List of test contents in the cluster.
+        cluster_contents (list): List of lists of words in the cluster.
         vectorizer (TfidfVectorizer): The fitted TF-IDF vectorizer.
         top_n (int): Number of top bigrams to include in the summary.
 
     Returns:
         str: A comma-separated string of the most common bigrams.
     """
-    # Combine all content in the cluster
-    combined_content = ' '.join(cluster_contents)
+    # Flatten the list of lists into a single list of words
+    flattened_contents = [word for sublist in cluster_contents for word in sublist]
 
-    # Tokenize and create bigrams
-    words = combined_content.lower().split()
-    filtered_words = [word for word in words if not should_exclude(word)]
+    # Filter out stop words and numbers
+    filtered_words = [word.lower() for word in flattened_contents if not should_exclude(word)]
+
+    # Create bigrams
     bigram_list = list(ngrams(filtered_words, 2))
 
     # Count bigram occurrences
@@ -179,29 +204,28 @@ def visualize_clusters(X, kmeans):
     plt.tight_layout()
     plt.show()
 
-def print_top_terms(test_data, clusters, n=5):
+def print_top_terms(test_data, clusters):
     for cluster_id, test_names in clusters.items():
-        # Combine all content in the cluster
-        cluster_content = ' '.join([test_data[name] for name in test_names])
-        
-        # Tokenize and create bigrams
+        print(f"\nCluster {cluster_id + 1}")
+        cluster_content = ' '.join([' '.join(test_data[name]) for name in test_names])
         words = cluster_content.lower().split()
         filtered_words = [word for word in words if not should_exclude(word)]
         bigram_list = list(bigrams(filtered_words))
-        
-        # Count bigram occurrences
         bigram_counts = Counter(bigram_list)
-        
-        # Sort by frequency and get top N bigrams
-        common_bigrams = sorted(bigram_counts.items(), key=lambda x: x[1], reverse=True)[:n]
-        
-        print(f"\nCluster {cluster_id}:")
+        common_bigrams = sorted(bigram_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        print(f"\nCluster {cluster_id + 1} (Common terms: {', '.join([f'{w1} {w2}' for (w1, w2), _ in common_bigrams])}):")
         print(", ".join([f"{w1} {w2}" for (w1, w2), _ in common_bigrams]))
+
+def safe_get_content(test_data, name):
+    content = test_data[name]
+    if isinstance(content, list):
+        return content[0] if content else ''
+    return content
 
 def print_cluster_histograms(test_data, clusters, kmeans, n=10):
     for cluster_id, test_names in clusters.items():
-        cluster_content = ' '.join([test_data[name] for name in test_names])
-        
+        cluster_content = ' '.join([safe_get_content(test_data, name) for name in test_names])
+
         words = cluster_content.lower().split()
         filtered_words = [word for word in words if not should_exclude(word)]
         bigram_list = list(bigrams(filtered_words))
@@ -251,8 +275,9 @@ if __name__ == "__main__":
     
     test_data = read_test_data(args.file_path)
     clusters, vectorizer, kmeans, X = cluster_tests(test_data, args.num_clusters)
-    print_clusters(clusters, test_data, vectorizer)
-    print_top_terms(test_data, clusters)  # Modified this line
+
+    # Now call print_top_terms
+    print_top_terms(test_data, clusters)
     
     # Write clusters to file
     write_clusters_to_file(clusters)
