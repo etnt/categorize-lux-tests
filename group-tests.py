@@ -1,7 +1,10 @@
 import re
 import argparse
+import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 from collections import defaultdict, Counter
 
 def read_test_data(file_path):
@@ -39,6 +42,8 @@ def cluster_tests(test_data, num_clusters):
         tuple: A tuple containing:
             - dict: Clustered test names.
             - TfidfVectorizer: The fitted vectorizer for further analysis.
+            - KMeans: The fitted KMeans model.
+            - np.ndarray: The TF-IDF transformed data.
     """
     test_names = list(test_data.keys())
     test_contents = list(test_data.values())
@@ -56,7 +61,7 @@ def cluster_tests(test_data, num_clusters):
     for test_name, cluster_id in zip(test_names, kmeans.labels_):
         clusters[cluster_id].append(test_name)
 
-    return clusters, vectorizer
+    return clusters, vectorizer, kmeans, X
 
 def get_cluster_summary(cluster_contents, vectorizer, top_n=5):
     """
@@ -72,20 +77,20 @@ def get_cluster_summary(cluster_contents, vectorizer, top_n=5):
     """
     # Combine all content in the cluster
     combined_content = ' '.join(cluster_contents)
-    
+
     # Get feature names (words) from the vectorizer
     feature_names = vectorizer.get_feature_names_out()
-    
+
     # Count word occurrences
     word_counts = Counter(combined_content.split())
-    
+
     # Filter words that are in the feature names and sort by frequency
     common_words = sorted(
         [(word, count) for word, count in word_counts.items() if word in feature_names],
         key=lambda x: x[1],
         reverse=True
     )
-    
+
     # Return top N words
     return ', '.join([word for word, _ in common_words[:top_n]])
 
@@ -106,6 +111,43 @@ def print_clusters(clusters, test_data, vectorizer):
             print(f"  - {test_name}")
         print()
 
+def visualize_clusters(X, kmeans):
+    """
+    Visualize the clusters using PCA.
+
+    Args:
+        X (np.ndarray): The TF-IDF transformed data.
+        kmeans (KMeans): The fitted KMeans model.
+    """
+    # Reduce dimensionality for visualization
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(X.toarray())
+
+    # Create a scatter plot
+    plt.figure(figsize=(12, 8))
+    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=kmeans.labels_, cmap='viridis')
+    plt.title('Document Clusters')
+    plt.colorbar(scatter)
+
+    # Add labels for cluster centers
+    centroids_pca = pca.transform(kmeans.cluster_centers_)
+    for i, centroid in enumerate(centroids_pca):
+        plt.annotate(f'Cluster {i}', xy=centroid, xytext=(5, 5),
+                     textcoords='offset points', fontweight='bold')
+
+    plt.tight_layout()
+    plt.show()
+
+def print_top_terms(vectorizer, clf, class_labels, n=5):
+    feature_names = vectorizer.get_feature_names_out()
+    for i, category in enumerate(class_labels):
+        top_indices = clf.cluster_centers_[i].argsort()[::-1][:n]
+        print(f"\nCluster {i}:")
+        for idx in top_indices:
+            print(f"{feature_names[idx]}", end=", ")
+        print()
+
+
 def parse_arguments():
     """
     Parse command-line arguments.
@@ -123,6 +165,9 @@ def parse_arguments():
 if __name__ == "__main__":
     args = parse_arguments()
     
+    num_clusters = args.num_clusters
     test_data = read_test_data(args.file_path)
-    clusters, vectorizer = cluster_tests(test_data, args.num_clusters)
+    clusters, vectorizer, kmeans, X = cluster_tests(test_data, num_clusters)
     print_clusters(clusters, test_data, vectorizer)
+    print_top_terms(vectorizer, kmeans, range(num_clusters))
+    visualize_clusters(X, kmeans)
