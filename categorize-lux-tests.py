@@ -40,7 +40,8 @@ def extract_info(file_path, extract_doc, extract_comments, extract_invoke_logs, 
             info['invoke_logs'] = re.findall(r'\[invoke log\s+(.+?)\]', content)
         
         if extract_progress:
-            info['progress'] = re.findall(r'\[progress\s+(.+?)\]', content)
+            progress_items = re.findall(r'\[progress\s+(.+?)\]', content)
+            info['progress'] = [item.replace('\\n', ' ').strip() for item in progress_items]
         
         if extract_comments:
             info['comments'] = [line.strip()[1:].strip() for line in content.split('\n') if line.strip().startswith('#')]
@@ -109,10 +110,14 @@ def write_summary(summary, output_file):
             if 'progress' in info:
                 f.write("Progress Information:\n")
                 for progress in info['progress']:
-                    f.write(f"- {progress}\n")
+                    # Remove any remaining '\n' and extra spaces
+                    cleaned_progress = progress.replace('\\n', ' ').strip()
+                    f.write(f"- {cleaned_progress}\n")
             if 'full_content' in info:
                 f.write("Full Content:\n")
-                f.write(info['full_content'])
+                # Remove '\n' notation from full content as well
+                cleaned_content = info['full_content'].replace('\\n', '\n')
+                f.write(cleaned_content)
                 f.write("\n")
             f.write("\n")
 

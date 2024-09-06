@@ -6,10 +6,31 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from collections import defaultdict, Counter
 from sklearn.decomposition import PCA
+from nltk import bigrams, ngrams
+from nltk.corpus import stopwords
+import nltk
+import os
+
+# Download necessary NLTK data (run this once)
+nltk.download('stopwords', quiet=True)
+
+# Add this at the beginning of your script or in a setup function
+nltk.download('stopwords')
+
+# Then, when you use stopwords, make sure to call it as a set:
+stop_words = set(stopwords.words('english'))
+
+def is_number(word):
+    return word.replace('.', '', 1).isdigit()
+
+def should_exclude(word):
+    return (word in stop_words or 
+            is_number(word) or 
+            re.match(r'^eng-\d+', word))
 
 def read_test_data(file_path):
     """
-    Read and parse the test data from the given file.
+    Read and parse the test data from the given file, excluding summary tags.
 
     Args:
         file_path (str): Path to the file containing test data.
@@ -20,13 +41,37 @@ def read_test_data(file_path):
     with open(file_path, 'r') as f:
         content = f.read()
 
+    # Split the content into individual tests
     tests = re.split(r'\nTest:', content)
     test_data = {}
+    
     for test in tests[1:]:  # Skip the first empty split
         lines = test.strip().split('\n')
         test_name = lines[0].strip()
-        test_content = ' '.join(lines[1:])
-        test_data[test_name] = test_content
+        
+        # Initialize an empty list to store relevant content
+        relevant_content = []
+        
+        # Flag to track whether we're in a section to include
+        include_section = True
+        
+        for line in lines[1:]:
+            # Check for summary tags and set the flag accordingly
+            if line.startswith(('Description:', 'Comments:', 'Invoke Logs:', 'Progress Information:')):
+                include_section = False
+                continue
+            
+            # If we encounter a new test or reach the end, reset the flag
+            if line == '' or line.startswith('Test:'):
+                include_section = True
+                continue
+            
+            # If we're in a section to include, add the line to relevant content
+            if include_section:
+                relevant_content.append(line)
+        
+        # Join the relevant content and store it in the dictionary
+        test_data[test_name] = ' '.join(relevant_content)
 
     return test_data
 
@@ -65,34 +110,30 @@ def cluster_tests(test_data, num_clusters):
 
 def get_cluster_summary(cluster_contents, vectorizer, top_n=5):
     """
-    Generate a summary of the most common terms in a cluster.
+    Generate a summary of the most common bigrams in a cluster.
 
     Args:
         cluster_contents (list): List of test contents in the cluster.
         vectorizer (TfidfVectorizer): The fitted TF-IDF vectorizer.
-        top_n (int): Number of top terms to include in the summary.
+        top_n (int): Number of top bigrams to include in the summary.
 
     Returns:
-        str: A comma-separated string of the most common terms.
+        str: A comma-separated string of the most common bigrams.
     """
     # Combine all content in the cluster
     combined_content = ' '.join(cluster_contents)
 
-    # Get feature names (words) from the vectorizer
-    feature_names = vectorizer.get_feature_names_out()
+    # Tokenize and create bigrams
+    words = combined_content.lower().split()
+    filtered_words = [word for word in words if not should_exclude(word)]
+    bigram_list = list(ngrams(filtered_words, 2))
 
-    # Count word occurrences
-    word_counts = Counter(combined_content.split())
+    # Count bigram occurrences
+    bigram_counts = Counter(bigram_list)
 
-    # Filter words that are in the feature names and sort by frequency
-    common_words = sorted(
-        [(word, count) for word, count in word_counts.items() if word in feature_names],
-        key=lambda x: x[1],
-        reverse=True
-    )
-
-    # Return top N words
-    return ', '.join([word for word, _ in common_words[:top_n]])
+    # Sort by frequency and return top N bigrams
+    common_bigrams = sorted(bigram_counts.items(), key=lambda x: x[1], reverse=True)
+    return ', '.join([' '.join(bigram) for bigram, _ in common_bigrams[:top_n]])
 
 def print_clusters(clusters, test_data, vectorizer):
     """
@@ -138,39 +179,62 @@ def visualize_clusters(X, kmeans):
     plt.tight_layout()
     plt.show()
 
-def print_top_terms(vectorizer, clf, class_labels, n=5):
-    feature_names = vectorizer.get_feature_names_out()
-    for i, category in enumerate(class_labels):
-        top_indices = clf.cluster_centers_[i].argsort()[::-1][:n]
-        print(f"\nCluster {i}:")
-        for idx in top_indices:
-            print(f"{feature_names[idx]}", end=", ")
-        print()
+def print_top_terms(test_data, clusters, n=5):
+    for cluster_id, test_names in clusters.items():
+        # Combine all content in the cluster
+        cluster_content = ' '.join([test_data[name] for name in test_names])
+        
+        # Tokenize and create bigrams
+        words = cluster_content.lower().split()
+        filtered_words = [word for word in words if not should_exclude(word)]
+        bigram_list = list(bigrams(filtered_words))
+        
+        # Count bigram occurrences
+        bigram_counts = Counter(bigram_list)
+        
+        # Sort by frequency and get top N bigrams
+        common_bigrams = sorted(bigram_counts.items(), key=lambda x: x[1], reverse=True)[:n]
+        
+        print(f"\nCluster {cluster_id}:")
+        print(", ".join([f"{w1} {w2}" for (w1, w2), _ in common_bigrams]))
 
-def print_cluster_histograms(vectorizer, clf, class_labels, n=10):
-    """
-    Print histograms of the most important terms for each cluster.
+def print_cluster_histograms(test_data, clusters, kmeans, n=10):
+    for cluster_id, test_names in clusters.items():
+        cluster_content = ' '.join([test_data[name] for name in test_names])
+        
+        words = cluster_content.lower().split()
+        filtered_words = [word for word in words if not should_exclude(word)]
+        bigram_list = list(bigrams(filtered_words))
+        
+        bigram_counts = Counter(bigram_list)
+        common_bigrams = sorted(bigram_counts.items(), key=lambda x: x[1], reverse=True)[:n]
+        
+        bigram_labels = [f"{w1} {w2}" for (w1, w2), _ in common_bigrams]
+        bigram_values = [count for _, count in common_bigrams]
 
-    Args:
-        vectorizer (TfidfVectorizer): The fitted TF-IDF vectorizer.
-        clf (KMeans): The fitted KMeans model.
-        class_labels (list): List of cluster labels.
-        n (int): Number of top terms to include in the histogram.
-    """
-    feature_names = vectorizer.get_feature_names_out()
-    for i, category in enumerate(class_labels):
-        top_indices = clf.cluster_centers_[i].argsort()[::-1][:n]
-        top_terms = [feature_names[idx] for idx in top_indices]
-        top_values = [clf.cluster_centers_[i][idx] for idx in top_indices]
-
-        plt.figure(figsize=(10, 5))
-        plt.bar(top_terms, top_values)
-        plt.title(f'Top {n} Terms for Cluster {i}')
-        plt.xlabel('Terms')
-        plt.ylabel('TF-IDF Score')
+        plt.figure(figsize=(12, 6))
+        plt.bar(bigram_labels, bigram_values)
+        plt.title(f'Top {n} Bigrams for Cluster {cluster_id}')
+        plt.xlabel('Bigrams')
+        plt.ylabel('Frequency (Number of Occurrences)')
         plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         plt.show()
+
+def write_clusters_to_file(clusters, output_file="grouped_tests.txt"):
+    """
+    Write the clustered test names to a text file.
+
+    Args:
+        clusters (dict): Clustered test names.
+        output_file (str): Name of the output file.
+    """
+    with open(output_file, 'w') as f:
+        for cluster_id, test_names in clusters.items():
+            f.write(f"Cluster {cluster_id + 1}:\n")
+            for test_name in test_names:
+                f.write(f"  - {test_name}\n")
+            f.write("\n")
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Cluster Lux tests based on content similarity.")
@@ -188,9 +252,13 @@ if __name__ == "__main__":
     test_data = read_test_data(args.file_path)
     clusters, vectorizer, kmeans, X = cluster_tests(test_data, args.num_clusters)
     print_clusters(clusters, test_data, vectorizer)
-    print_top_terms(vectorizer, kmeans, range(args.num_clusters))
+    print_top_terms(test_data, clusters)  # Modified this line
+    
+    # Write clusters to file
+    write_clusters_to_file(clusters)
+    print(f"Grouped tests have been written to 'grouped_tests.txt'")
     
     if args.histogram:
-        print_cluster_histograms(vectorizer, kmeans, range(args.num_clusters))
+        print_cluster_histograms(test_data, clusters, kmeans)
     
     visualize_clusters(X, kmeans)
