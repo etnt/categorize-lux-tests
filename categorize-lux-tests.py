@@ -1,84 +1,67 @@
 import os
 import sys
 import re
+import argparse
 
-def extract_info(file_path):
+def extract_info(file_path, extract_doc, extract_comments, extract_invoke_logs, extract_progress, include_full_content):
     """
-    Extract information from a Lux test file.
-
-    This function reads a Lux test file and extracts various pieces of information,
-    including documentation, comments, invoke logs, and progress information.
+    Extract information from a Lux test file based on provided switches.
 
     Args:
     file_path (str): The path to the Lux test file to be processed.
+    extract_doc (bool): Whether to extract documentation description.
+    extract_comments (bool): Whether to extract comments.
+    extract_invoke_logs (bool): Whether to extract invoke logs.
+    extract_progress (bool): Whether to extract progress information.
+    include_full_content (bool): Whether to include the full file content.
 
     Returns:
-    tuple: A tuple containing four elements:
-        - doc_description (str): The documentation description extracted from the file.
-        - comments (list): A list of comments found in the file.
-        - invoke_logs (list): A list of invoke log entries found in the file.
-        - progress_info (list): A list of progress information entries found in the file.
-
-    The function supports two formats for documentation:
-    1. [doc <description>]
-    2. [doc] <description> [enddoc]
-
-    It also extracts:
-    - Comments starting with '#'
-    - Invoke logs in the format [invoke log <information>]
-    - Progress information in the format [progress <information>]
+    dict: A dictionary containing the requested information.
     """
-    comments = []
-    doc_description = ""
-    invoke_logs = []
-    progress_info = []
+    info = {}
     with open(file_path, 'r') as file:
         content = file.read()
         
-        # Extract [doc <description>] format
-        doc_match = re.search(r'\[doc\s+(.+?)\]', content, re.DOTALL)
-        if doc_match:
-            doc_description = doc_match.group(1).strip()
-        else:
-            # Extract [doc] <description> [enddoc] format
-            doc_match = re.search(r'\[doc\](.*?)\[enddoc\]', content, re.DOTALL)
+        if include_full_content:
+            info['full_content'] = content
+        
+        if extract_doc:
+            # Extract [doc <description>] format
+            doc_match = re.search(r'\[doc\s+(.+?)\]', content, re.DOTALL)
             if doc_match:
-                doc_description = doc_match.group(1).strip()
+                info['doc'] = doc_match.group(1).strip()
+            else:
+                # Extract [doc] <description> [enddoc] format
+                doc_match = re.search(r'\[doc\](.*?)\[enddoc\]', content, re.DOTALL)
+                if doc_match:
+                    info['doc'] = doc_match.group(1).strip()
         
-        # Extract [invoke log <information>]
-        invoke_logs = re.findall(r'\[invoke log\s+(.+?)\]', content)
+        if extract_invoke_logs:
+            info['invoke_logs'] = re.findall(r'\[invoke log\s+(.+?)\]', content)
         
-        # Extract [progress <information>]
-        progress_info = re.findall(r'\[progress\s+(.+?)\]', content)
+        if extract_progress:
+            info['progress'] = re.findall(r'\[progress\s+(.+?)\]', content)
         
-        # Extract comments
-        for line in content.split('\n'):
-            if line.strip().startswith('#'):
-                comments.append(line.strip()[1:].strip())
+        if extract_comments:
+            info['comments'] = [line.strip()[1:].strip() for line in content.split('\n') if line.strip().startswith('#')]
     
-    return doc_description, comments, invoke_logs, progress_info
+    return info
 
-def summarize_lux_tests(root_dir):
+def summarize_lux_tests(root_dir, extract_doc, extract_comments, extract_invoke_logs, extract_progress, include_full_content):
     """
     Summarize Lux test files in a given directory and its subdirectories.
 
-    This function walks through the directory tree starting from root_dir,
-    processes all .lux files, and collects information about each test.
-    It extracts documentation, comments, invoke logs, and progress information.
-
     Args:
     root_dir (str): The root directory to start searching for .lux files.
+    extract_doc (bool): Whether to extract documentation description.
+    extract_comments (bool): Whether to extract comments.
+    extract_invoke_logs (bool): Whether to extract invoke logs.
+    extract_progress (bool): Whether to extract progress information.
+    include_full_content (bool): Whether to include the full file content.
 
     Returns:
     dict: A dictionary where keys are directory names and values are dictionaries
-          containing 'doc' (str), 'comments' (list), 'invoke_logs' (list),
-          and 'progress' (list) for each directory.
-
-    Note:
-    - The function assumes that the extract_info() function is available to process
-      individual .lux files.
-    - If multiple .lux files in a directory have documentation, only the first
-      encountered documentation is retained.
+          containing the requested information for each directory.
     """
     summary = {}
     
@@ -89,14 +72,15 @@ def summarize_lux_tests(root_dir):
                 dir_name = os.path.basename(dirpath)
                 
                 if dir_name not in summary:
-                    summary[dir_name] = {'doc': '', 'comments': [], 'invoke_logs': [], 'progress': []}
+                    summary[dir_name] = {}
                 
-                doc, comments, invoke_logs, progress = extract_info(file_path)
-                if doc and not summary[dir_name]['doc']:
-                    summary[dir_name]['doc'] = doc
-                summary[dir_name]['comments'].extend(comments)
-                summary[dir_name]['invoke_logs'].extend(invoke_logs)
-                summary[dir_name]['progress'].extend(progress)
+                info = extract_info(file_path, extract_doc, extract_comments, extract_invoke_logs, extract_progress, include_full_content)
+                
+                for key, value in info.items():
+                    if key not in summary[dir_name]:
+                        summary[dir_name][key] = value if key in ['doc', 'full_content'] else []
+                    if key not in ['doc', 'full_content']:
+                        summary[dir_name][key].extend(value)
     
     return summary
 
@@ -104,55 +88,59 @@ def write_summary(summary, output_file):
     """
     Write a summary of Lux test information to a file.
 
-    This function takes a dictionary containing summarized information about Lux tests
-    and writes it to a specified output file. The summary includes test descriptions,
-    comments, invoke logs, and progress information for each test directory.
-
     Args:
     summary (dict): A dictionary where keys are directory names and values are dictionaries
-                    containing 'doc' (str), 'comments' (list), 'invoke_logs' (list),
-                    and 'progress' (list) for each directory.
+                    containing the extracted information for each directory.
     output_file (str): The name of the file to write the summary to.
-
-    The function writes the following information for each test directory:
-    - Test name (directory name)
-    - Description (if available)
-    - Comments (if any)
-    - Invoke Logs (if any)
-    - Progress Information (if any)
-
-    Each section is clearly labeled, and individual items are prefixed with a hyphen.
-    A blank line is added between each test directory's information for readability.
     """
     with open(output_file, 'w') as f:
         for dir_name, info in summary.items():
             f.write(f"Test: {dir_name}\n")
-            if info['doc']:
+            if 'doc' in info:
                 f.write(f"Description: {info['doc']}\n")
-            if info['comments']:
+            if 'comments' in info:
                 f.write("Comments:\n")
                 for comment in info['comments']:
                     f.write(f"- {comment}\n")
-            if info['invoke_logs']:
+            if 'invoke_logs' in info:
                 f.write("Invoke Logs:\n")
                 for log in info['invoke_logs']:
                     f.write(f"- {log}\n")
-            if info['progress']:
+            if 'progress' in info:
                 f.write("Progress Information:\n")
                 for progress in info['progress']:
                     f.write(f"- {progress}\n")
+            if 'full_content' in info:
+                f.write("Full Content:\n")
+                f.write(info['full_content'])
+                f.write("\n")
             f.write("\n")
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Summarize Lux test files.")
+    parser.add_argument("root_directory", help="Path to the root directory containing Lux test files")
+    parser.add_argument("--no-doc", action="store_false", dest="extract_doc", help="Don't extract documentation description")
+    parser.add_argument("--no-comments", action="store_false", dest="extract_comments", help="Don't extract comments")
+    parser.add_argument("--no-invoke-logs", action="store_false", dest="extract_invoke_logs", help="Don't extract invoke logs")
+    parser.add_argument("--no-progress", action="store_false", dest="extract_progress", help="Don't extract progress information")
+    parser.add_argument("--include-full-content", action="store_true", help="Include full content of Lux files")
+    parser.add_argument("-o", "--output", default="lux_tests_summary.txt", help="Output file name (default: lux_tests_summary.txt)")
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    print("Enter the path to your lux tests directory:")
-    root_directory = input().strip()
+    args = parse_arguments()
     
-    if not os.path.isdir(root_directory):
-        print(f"Error: '{root_directory}' is not a valid directory.")
+    if not os.path.isdir(args.root_directory):
+        print(f"Error: '{args.root_directory}' is not a valid directory.")
         sys.exit(1)
     
-    output_file = "lux_tests_summary.txt"
-    
-    summary = summarize_lux_tests(root_directory)
-    write_summary(summary, output_file)
-    print(f"Summary written to {output_file}")
+    summary = summarize_lux_tests(
+        args.root_directory,
+        args.extract_doc,
+        args.extract_comments,
+        args.extract_invoke_logs,
+        args.extract_progress,
+        args.include_full_content
+    )
+    write_summary(summary, args.output)
+    print(f"Summary written to {args.output}")

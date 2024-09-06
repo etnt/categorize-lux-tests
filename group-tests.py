@@ -4,8 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
 from collections import defaultdict, Counter
+from sklearn.decomposition import PCA
 
 def read_test_data(file_path):
     """
@@ -147,27 +147,50 @@ def print_top_terms(vectorizer, clf, class_labels, n=5):
             print(f"{feature_names[idx]}", end=", ")
         print()
 
+def print_cluster_histograms(vectorizer, clf, class_labels, n=10):
+    """
+    Print histograms of the most important terms for each cluster.
+
+    Args:
+        vectorizer (TfidfVectorizer): The fitted TF-IDF vectorizer.
+        clf (KMeans): The fitted KMeans model.
+        class_labels (list): List of cluster labels.
+        n (int): Number of top terms to include in the histogram.
+    """
+    feature_names = vectorizer.get_feature_names_out()
+    for i, category in enumerate(class_labels):
+        top_indices = clf.cluster_centers_[i].argsort()[::-1][:n]
+        top_terms = [feature_names[idx] for idx in top_indices]
+        top_values = [clf.cluster_centers_[i][idx] for idx in top_indices]
+
+        plt.figure(figsize=(10, 5))
+        plt.bar(top_terms, top_values)
+        plt.title(f'Top {n} Terms for Cluster {i}')
+        plt.xlabel('Terms')
+        plt.ylabel('TF-IDF Score')
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        plt.show()
 
 def parse_arguments():
-    """
-    Parse command-line arguments.
-
-    Returns:
-        argparse.Namespace: Parsed arguments.
-    """
     parser = argparse.ArgumentParser(description="Cluster Lux tests based on content similarity.")
-    parser.add_argument("-f","--file-path", type=str, default="./lux_tests_summary.txt",
-                        help="Path to the lux_tests_summary.txt file (default: ./lux_tests_summary.txt)")
+    parser.add_argument("-f", "--file-path", default="lux_tests_summary.txt",
+                        help="Path to the lux_tests_summary.txt file (default: lux_tests_summary.txt)")
     parser.add_argument("-n", "--num-clusters", type=int, default=5,
                         help="Number of clusters to create (default: 5)")
+    parser.add_argument("--histogram", action="store_true",
+                        help="Print histograms of cluster centers")
     return parser.parse_args()
 
 if __name__ == "__main__":
     args = parse_arguments()
     
-    num_clusters = args.num_clusters
     test_data = read_test_data(args.file_path)
-    clusters, vectorizer, kmeans, X = cluster_tests(test_data, num_clusters)
+    clusters, vectorizer, kmeans, X = cluster_tests(test_data, args.num_clusters)
     print_clusters(clusters, test_data, vectorizer)
-    print_top_terms(vectorizer, kmeans, range(num_clusters))
+    print_top_terms(vectorizer, kmeans, range(args.num_clusters))
+    
+    if args.histogram:
+        print_cluster_histograms(vectorizer, kmeans, range(args.num_clusters))
+    
     visualize_clusters(X, kmeans)
