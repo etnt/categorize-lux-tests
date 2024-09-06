@@ -1,8 +1,8 @@
 # TODO
 
-oI'm not very happy with the result of the grouping, probably because of the indata not having enough quality. The problem I want to solve is to try and group a large amount of test cases, which now are located in a flat directory structure i.e. not organized at all. So, based of what each test (which may consist of several Lux files) is testing it would be nice to group test together that test similar or related things. Note that Lux tests are very similar to expect based tests. Any ideas of how to do this?
+_The problem I want to solve is to try and group a large amount of test cases, which now are located in a flat directory structure i.e. not organized at all. So, based of what each test (which may consist of several Lux files) is testing it would be nice to group test together that test similar or related things. Note that Lux tests are very similar to expect based tests. Any ideas of how to do this?_
 
-I understand your frustration with the current results. Given the nature of your problem and the structure of Lux tests, here are some alternative approaches you could consider:
+Given the nature of your problem and the structure of Lux tests, here are some alternative approaches you could consider:
 
 ## 1. Use Topic Modeling Techniques
 
