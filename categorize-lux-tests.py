@@ -3,6 +3,31 @@ import sys
 import re
 
 def extract_info(file_path):
+    """
+    Extract information from a Lux test file.
+
+    This function reads a Lux test file and extracts various pieces of information,
+    including documentation, comments, invoke logs, and progress information.
+
+    Args:
+    file_path (str): The path to the Lux test file to be processed.
+
+    Returns:
+    tuple: A tuple containing four elements:
+        - doc_description (str): The documentation description extracted from the file.
+        - comments (list): A list of comments found in the file.
+        - invoke_logs (list): A list of invoke log entries found in the file.
+        - progress_info (list): A list of progress information entries found in the file.
+
+    The function supports two formats for documentation:
+    1. [doc <description>]
+    2. [doc] <description> [enddoc]
+
+    It also extracts:
+    - Comments starting with '#'
+    - Invoke logs in the format [invoke log <information>]
+    - Progress information in the format [progress <information>]
+    """
     comments = []
     doc_description = ""
     invoke_logs = []
@@ -34,6 +59,27 @@ def extract_info(file_path):
     return doc_description, comments, invoke_logs, progress_info
 
 def summarize_lux_tests(root_dir):
+    """
+    Summarize Lux test files in a given directory and its subdirectories.
+
+    This function walks through the directory tree starting from root_dir,
+    processes all .lux files, and collects information about each test.
+    It extracts documentation, comments, invoke logs, and progress information.
+
+    Args:
+    root_dir (str): The root directory to start searching for .lux files.
+
+    Returns:
+    dict: A dictionary where keys are directory names and values are dictionaries
+          containing 'doc' (str), 'comments' (list), 'invoke_logs' (list),
+          and 'progress' (list) for each directory.
+
+    Note:
+    - The function assumes that the extract_info() function is available to process
+      individual .lux files.
+    - If multiple .lux files in a directory have documentation, only the first
+      encountered documentation is retained.
+    """
     summary = {}
     
     for dirpath, dirnames, filenames in os.walk(root_dir):
@@ -55,6 +101,29 @@ def summarize_lux_tests(root_dir):
     return summary
 
 def write_summary(summary, output_file):
+    """
+    Write a summary of Lux test information to a file.
+
+    This function takes a dictionary containing summarized information about Lux tests
+    and writes it to a specified output file. The summary includes test descriptions,
+    comments, invoke logs, and progress information for each test directory.
+
+    Args:
+    summary (dict): A dictionary where keys are directory names and values are dictionaries
+                    containing 'doc' (str), 'comments' (list), 'invoke_logs' (list),
+                    and 'progress' (list) for each directory.
+    output_file (str): The name of the file to write the summary to.
+
+    The function writes the following information for each test directory:
+    - Test name (directory name)
+    - Description (if available)
+    - Comments (if any)
+    - Invoke Logs (if any)
+    - Progress Information (if any)
+
+    Each section is clearly labeled, and individual items are prefixed with a hyphen.
+    A blank line is added between each test directory's information for readability.
+    """
     with open(output_file, 'w') as f:
         for dir_name, info in summary.items():
             f.write(f"Test: {dir_name}\n")
